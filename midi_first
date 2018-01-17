@@ -1,0 +1,166 @@
+ #include <MIDI.h>
+
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+int pinRead;
+
+const int pads = 8;
+
+//multiplexer settings
+int r0 = 0;
+int r1 = 0;
+int r2 = 0;
+int s0 = 2;
+int s1 = 3;
+int s2 = 4;
+int ANALOG_PIN = A0;
+int buf[8];
+int count = 0;
+//mx set end
+
+unsigned char padNote[pads] = {48,38,43,36,49,42,46,51};
+
+int padCutOff[pads] = {50,50,50,50,50,50,50,50};
+
+int maxPlayTime[pads] = {120,120,120,120,120,120,120,120};
+
+boolean velocityFlag = true;
+
+boolean activePad[pads] = {0,0,0,0,0,0,0,0};
+
+int pinPlayTime[pads] = {0,0,0,0,0,0,0,0};
+
+int msOld_[pads] = {0,0,0,0,0,0,0,0};
+int msNew_[pads] = {0,0,0,0,0,0,0,0};
+int msDif_[pads] = {0,0,0,0,0,0,0,0};
+
+int msOld = 0;
+int msNew = 0;
+int msDif = 0;
+int i = 0;
+int lastpin = -1;
+
+byte status1;
+
+int pin = 0;
+int hitavg = 0;
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  pinMode(s0, OUTPUT);
+  pinMode(s1, OUTPUT);
+  pinMode(s2, OUTPUT);
+  //MIDI.begin(MIDI_CHANNEL_OMNI);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  getAnalogData();
+  
+  for(int pin=0;pin<pads;pin++)
+  {
+    hitavg = buf[pin];   
+    msNew_[pin] = millis();
+    if(hitavg>padCutOff[pin])
+    {
+      if(activePad[pin]==false)
+      {
+        if(velocityFlag == true)
+        {
+          //uint32_t msStart = millis();
+          
+          
+          /*uint32_t peak = 0;
+          do
+          {
+            /*Serial.print(hitavg);
+            Serial.print(" - ");
+            Serial.println(peak);*/
+            /*if(hitavg>peak)
+            {
+              peak = hitavg;
+            }
+            getAnalogData();
+            hitavg = buf[pin];
+            //msNew = millis();
+            
+          }
+          while((msNew-msStart)<30);
+          hitavg = peak;*/
+          hitavg = hitavg/8;
+          if(hitavg<20) hitavg = 30;//45
+          else if(hitavg>=40 && hitavg<70) hitavg = 65;
+          else if(hitavg<120 && hitavg>=70) hitavg = 65;
+          else if (hitavg>=120) hitavg = 65;
+          if(pin==0 || pin==2) hitavg = 127;
+        
+        }
+        else
+        {
+          hitavg = 65;
+        }
+
+        msDif_[pin] = msNew_[pin]-msOld_[pin];
+        
+        if(msDif_[pin]>40 && lastpin==pin)
+        {
+          lastpin = -1;
+          //Serial.println(hitavg);
+        }
+        if(msDif_[pin]>40 && lastpin!=pin)
+        {
+            Serial.print(i++);
+            Serial.print(" pin: ");
+            Serial.print(pin);
+            Serial.print(" ");
+            Serial.print(" ON msDif: ");
+            Serial.print(msDif_[pin]);
+            Serial.print(" millis: ");
+            Serial.print(millis());
+            Serial.print(" ");
+            Serial.println(hitavg);
+            lastpin = pin;
+            //MIDI.sendNoteOn(padNote[pin],hitavg,1);
+            pinPlayTime[pin] = 0;
+            activePad[pin] = true;
+        }
+
+        msOld_[pin] = msNew_[pin];
+      }
+      else
+      {
+        pinPlayTime[pin] = pinPlayTime[pin]+30;
+      }
+    }
+    else if(activePad[pin] == true)
+    {
+      pinPlayTime[pin] = pinPlayTime[pin]+30;
+      if(pinPlayTime[pin]>maxPlayTime[pin])
+      {
+        activePad[pin] = false;
+        //MIDI.sendNoteOff(padNote[pin],0,1);
+      }
+    }
+  }
+}
+
+void getAnalogData()
+{
+  for(count=0;count<8;count++)
+  {
+    r0 = count & 0x01;
+    r1 = (count>>1) & 0x01;
+    r2 = (count>>2) & 0x01;
+
+    digitalWrite(s0, r0);
+    digitalWrite(s1, r1);
+    digitalWrite(s2, r2);
+
+    buf[count] = analogRead(ANALOG_PIN);
+  }
+}
+
+
+
