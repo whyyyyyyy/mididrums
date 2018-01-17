@@ -1,0 +1,168 @@
+#include <MIDI.h>
+
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+int pinRead;
+
+const int pads = 8;
+
+//multiplexer settings
+int r0 = 0;
+int r1 = 0;
+int r2 = 0;
+int s0 = 2;
+int s1 = 3;
+int s2 = 4;
+int ANALOG_PIN = A0;
+int buf[8];
+int count = 0;
+//mx set end
+
+unsigned char padNote[pads] = {48, 38, 43, 36, 49, 42, 46, 51};
+
+int padCutOff[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
+
+int maxPlayTime[pads] = {120, 120, 120, 120, 120, 120, 120, 120};
+
+int peaks[8] = {0, 0, 0, 0, 0, 0, 0, 0}; //при ударе считываем до 8 значений и выбираем наибольшее
+
+boolean velocityFlag = true;
+
+boolean activePad[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+int pinPlayTime[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+int msOld_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+int msNew_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+int msDif_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+int msOld = 0;
+int msNew = 0;
+int msDif = 0;
+int i = 0;
+int lastpin = -1;
+
+byte status1;
+
+int pin = 0;
+int hitavg = 0;
+
+void setup() {
+  // put your setup code here, to run once:
+  //Serial.begin(9600);
+  pinMode(s0, OUTPUT);
+  pinMode(s1, OUTPUT);
+  pinMode(s2, OUTPUT);
+  MIDI.begin(MIDI_CHANNEL_OMNI);
+}
+
+int peakPos = 0;
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  getAnalogData();
+
+  for (int pin = 0; pin < pads; pin++)
+  {
+
+    hitavg = buf[pin];
+    msNew_[pin] = millis();
+    if (hitavg > padCutOff[pin])
+    {
+      if (activePad[pin] == false)
+      {
+
+        msDif_[pin] = msNew_[pin] - msOld_[pin];
+
+        if (msDif_[pin] > 22 && lastpin == pin)
+        {
+          lastpin = -1;
+        }
+        if (msDif_[pin] > 22 && lastpin != pin)
+        {
+          hitavg = getVelocity(pin);
+          MIDI.sendNoteOn(padNote[pin],hitavg,1);
+          //Serial.println(hitavg);
+        }
+        lastpin = pin;
+        //
+        pinPlayTime[pin] = 0;
+        activePad[pin] = true;
+
+
+        msOld_[pin] = msNew_[pin];
+      }
+      else
+      {
+        pinPlayTime[pin] = pinPlayTime[pin] + 30;
+      }
+    }
+    else if (activePad[pin] == true)
+    {
+      pinPlayTime[pin] = pinPlayTime[pin] + 30;
+      if (pinPlayTime[pin] > maxPlayTime[pin])
+      {
+        activePad[pin] = false;
+        MIDI.sendNoteOff(padNote[pin],0,1);
+        //
+      }
+    }
+  }
+}
+
+void getAnalogData()
+{
+  for (count = 0; count < 8; count++)
+  {
+    r0 = count & 0x01;
+    r1 = (count >> 1) & 0x01;
+    r2 = (count >> 2) & 0x01;
+
+    digitalWrite(s0, r0);
+    digitalWrite(s1, r1);
+    digitalWrite(s2, r2);
+
+    buf[count] = analogRead(ANALOG_PIN)-20;
+  }
+}
+
+void readPeaks(int pin)
+{
+  for (int peakPos = 0; peakPos < 8; peakPos++)
+  {
+    getAnalogData();
+    peaks[peakPos] = buf[pin];
+    if (peaks[peakPos] > 0)
+    {
+      //Serial.print(peaks[peakPos]);
+      //Serial.print(" ");
+    }
+  }
+  //Serial.print(" - ");
+  //Serial.println(getMax(peaks,8));
+}
+
+int getMax(int arr[], int n)
+{
+  int ret = 0;
+  for (int i = 0; i < n; i++)
+  {
+    if (ret < arr[i])
+      ret = arr[i];
+  }
+  return ret;
+}
+
+int getVelocity(int pin)
+{
+  readPeaks(pin);
+  return getMax(peaks,8);
+}
+
+/*
+   MIDI.sendNoteOn(padNote[pin],hitavg,1);
+   MIDI.sendNoteOff(padNote[pin],0,1);
+*/
+
+
