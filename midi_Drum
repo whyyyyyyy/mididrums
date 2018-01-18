@@ -22,15 +22,11 @@ unsigned char padNote[pads] = {48, 38, 43, 36, 49, 42, 46, 51};
 
 int padCutOff[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
 
-int maxPlayTime[pads] = {120, 120, 120, 120, 120, 120, 120, 120};
-
 int peaks[8] = {0, 0, 0, 0, 0, 0, 0, 0}; //при ударе считываем до 8 значений и выбираем наибольшее
 
 boolean velocityFlag = true;
 
 boolean activePad[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-int pinPlayTime[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 int msOld_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
 int msNew_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -49,11 +45,11 @@ int hitavg = 0;
 
 void setup() {
   // put your setup code here, to run once:
-  //Serial.begin(9600);
+  Serial.begin(9600);
   pinMode(s0, OUTPUT);
   pinMode(s1, OUTPUT);
   pinMode(s2, OUTPUT);
-  MIDI.begin(MIDI_CHANNEL_OMNI);
+  //MIDI.begin(MIDI_CHANNEL_OMNI);
 }
 
 int peakPos = 0;
@@ -82,31 +78,21 @@ void loop() {
         if (msDif_[pin] > 22 && lastpin != pin)
         {
           hitavg = getVelocity(pin);
-          MIDI.sendNoteOn(padNote[pin],hitavg,1);
-          //Serial.println(hitavg);
+          //MIDI.sendNoteOn(padNote[pin],hitavg,1);
+          Serial.println(hitavg);
         }
         lastpin = pin;
         //
-        pinPlayTime[pin] = 0;
         activePad[pin] = true;
 
 
         msOld_[pin] = msNew_[pin];
       }
-      else
-      {
-        pinPlayTime[pin] = pinPlayTime[pin] + 30;
-      }
     }
     else if (activePad[pin] == true)
     {
-      pinPlayTime[pin] = pinPlayTime[pin] + 30;
-      if (pinPlayTime[pin] > maxPlayTime[pin])
-      {
-        activePad[pin] = false;
-        MIDI.sendNoteOff(padNote[pin],0,1);
-        //
-      }
+      activePad[pin] = false;
+      //MIDI.sendNoteOff(padNote[pin],0,1);
     }
   }
 }
@@ -123,12 +109,13 @@ void getAnalogData()
     digitalWrite(s1, r1);
     digitalWrite(s2, r2);
 
-    buf[count] = analogRead(ANALOG_PIN)-20;
+    buf[count] = analogRead(ANALOG_PIN) - 20;
   }
 }
 
 void readPeaks(int pin)
 {
+
   for (int peakPos = 0; peakPos < 8; peakPos++)
   {
     getAnalogData();
@@ -139,8 +126,6 @@ void readPeaks(int pin)
       //Serial.print(" ");
     }
   }
-  //Serial.print(" - ");
-  //Serial.println(getMax(peaks,8));
 }
 
 int getMax(int arr[], int n)
@@ -157,12 +142,10 @@ int getMax(int arr[], int n)
 int getVelocity(int pin)
 {
   readPeaks(pin);
-  return getMax(peaks,8);
+  return getMax(peaks, 8);
 }
 
 /*
    MIDI.sendNoteOn(padNote[pin],hitavg,1);
    MIDI.sendNoteOff(padNote[pin],0,1);
 */
-
-
