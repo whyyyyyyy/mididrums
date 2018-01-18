@@ -24,8 +24,6 @@ int padCutOff[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
 
 int maxPlayTime[pads] = {120, 120, 120, 120, 120, 120, 120, 120};
 
-int peaks[8] = {0, 0, 0, 0, 0, 0, 0, 0}; //при ударе считываем до 8 значений и выбираем наибольшее
-
 boolean velocityFlag = true;
 
 boolean activePad[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -41,6 +39,7 @@ int msNew = 0;
 int msDif = 0;
 int i = 0;
 int lastpin = -1;
+int timeBetweenHits = 22;
 
 byte status1;
 
@@ -55,8 +54,6 @@ void setup() {
   pinMode(s2, OUTPUT);
   MIDI.begin(MIDI_CHANNEL_OMNI);
 }
-
-int peakPos = 0;
 
 void loop() {
   // put your main code here, to run repeatedly:
@@ -75,13 +72,24 @@ void loop() {
 
         msDif_[pin] = msNew_[pin] - msOld_[pin];
 
-        if (msDif_[pin] > 22 && lastpin == pin)
+        if (msDif_[pin] > timeBetweenHits && lastpin == pin)
         {
           lastpin = -1;
         }
-        if (msDif_[pin] > 22 && lastpin != pin)
+        if (msDif_[pin] > timeBetweenHits && lastpin != pin)
         {
-          hitavg = getVelocity(pin);
+          int newHit = 0;
+          do
+          {
+            if(newHit<hitavg)
+            {
+              newHit = hitavg;
+            }
+            getAnalogData();
+            hitavg = buf[pin];
+          }
+          while(hitavg<newhit);
+          
           MIDI.sendNoteOn(padNote[pin],hitavg,1);
           //Serial.println(hitavg);
         }
