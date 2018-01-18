@@ -180,4 +180,9 @@ int getVelocity(int pin)
    MIDI.sendNoteOff(padNote[pin],0,1);
 */
 
+/*
+
+signal empty, hit list for 1 piezo: 0 0 0 0 0 ... hit occured 9 40 56 33 23 18 12 9 0 0 0 ~20ms~ 0 0 another hit occured 9 40 56 33 23 18 12 9 0 0 0
+
+*/
 
