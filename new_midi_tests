@@ -49,6 +49,7 @@ int pin = 0;
 int hitavg = 0;
 
 //store signals and peaks
+//https://github.com/evankale/ArduinoMidiDrums/blob/master/ArduinoMidiDrums.ino
 short currentSignalIndex[pads];
 unsigned short signalBuffer[pads][SIGNAL_BUFFER_SIZE];
 unsigned short peakBuffer[pads][PEAK_BUFFER_SIZE];
