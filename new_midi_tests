@@ -42,7 +42,8 @@ int msNew = 0;
 int msDif = 0;
 int i = 0;
 int lastpin = -1;
-int timeBetweenHits = 22;
+int timeBetweenHits = 50;
+int timeBetweenPeaks = 20;
 
 int pin = 0;
 int hitavg = 0;
