@@ -1,5 +1,7 @@
 #include <MIDI.h>
-#define SIGNAL_BUFFER_SIZE 100
+#define HIT_BUFFER_SIZE 80
+#define PEAK_BUFFER_SIZE 10
+
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 
@@ -19,111 +21,136 @@ int buf[8];
 int count = 0;
 //mx set end
 
-unsigned char padNote[pads] = {48, 38, 43, 36, 49, 42, 46, 51};
-
-int thresHoldPads[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
-
-int maxPlayTime[pads] = {120, 120, 120, 120, 120, 120, 120, 120};
-
-boolean velocityFlag = true;
-
-boolean activePad[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-int pinPlayTime[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-//times
-int msOld_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-int msNew_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-int msDif_[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-
-int msOld = 0;
-int msNew = 0;
-int msDif = 0;
-int i = 0;
-int lastpin = -1;
-int timeBetweenHits = 50;
-int timeBetweenPeaks = 20;
-
-int pin = 0;
-int hitavg = 0;
-
-//store signals and peaks
-//https://github.com/evankale/ArduinoMidiDrums/blob/master/ArduinoMidiDrums.ino
-short currentSignalIndex[pads];
-unsigned short signalBuffer[pads][SIGNAL_BUFFER_SIZE];
+unsigned short padNote[pads] = {48, 38, 43, 36, 49, 42, 46, 51};
+unsigned short thresholdPads[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
+unsigned short signalBuffer[pads][HIT_BUFFER_SIZE];
 unsigned short peakBuffer[pads][PEAK_BUFFER_SIZE];
+boolean activePad[pads] = {0, 0, 0, 0, 0, 0, 0, 0};
+unsigned short hitavg = 0;
+unsigned short signalPos[pads];
+unsigned short startReadingHit[pads];
+unsigned short peakPos[pads];
+unsigned short startReadingPeak[pads];
+bool lastPeakZeroed[pads];
+unsigned long lastPeakTime[pads];
+unsigned long lastHitTime[pads];
+unsigned short timeBetweenPeaks = 20;
+unsigned short timeBetweenHits = 100;
+
+bool hitReady[pads];
+unsigned short hitReadyVelocity[pads];
 
 void setup() {
   // put your setup code here, to run once:
-  
-  for(int i=0;i<pads;i++)
-  {
-    currentSignalIndex[i] = 0;
-    memset(signalBuffer[i],0,sizeof(signalBuffer[i]));
-  }
-  
   //Serial.begin(9600);
   pinMode(s0, OUTPUT);
   pinMode(s1, OUTPUT);
   pinMode(s2, OUTPUT);
+  for (int i = 0; i < pads; i++)
+  {
+    lastPeakZeroed[i] = false;
+    signalPos[i] = 0;
+    peakPos[i] = 0;
+    hitReady[i] = false;
+    hitReadyVelocity[pads] = 0;
+    lastHitTime[pads] = 0;
+    lastPeakTime[pads] = 0;
+    peakPos[pads] = 0;
+    signalPos[pads] = 0;
+    memset(signalBuffer[i], 0, sizeof(signalBuffer[i]));
+    memset(peakBuffer[i], 0, sizeof(peakBuffer[i]));
+  }
   MIDI.begin(MIDI_CHANNEL_OMNI);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-
+  hitavg = 0;
   getAnalogData();
+  unsigned long currentTime = millis();
 
   for (int pin = 0; pin < pads; pin++)
   {
-
     hitavg = buf[pin];
-    
-    signalBuffer[i][currentSignalIndex[i]] = hitavg;
-    
-    msNew_[pin] = millis();
-    if (hitavg > thresHoldPads[pin])
+    signalBuffer[pin][signalPos[pin]] = hitavg;
+    if (hitavg < thresholdPads[pin])
     {
-      if (activePad[pin] == false)
+      if (!lastPeakZeroed && (currentTime - lastPeakTime[pin]) > timeBetweenPeaks )
       {
+        recordPeak(pin, 0);
+      }
+      else
+      {
+        //get prev signal:
+        short prevSignalPos = signalPos[pin] - 1;
+        if (prevSignalPos < 0) prevSignalPos = HIT_BUFFER_SIZE - 1;
+        unsigned short prevSignal = signalBuffer[pin][prevSignalPos];
 
-        msDif_[pin] = msNew_[pin] - msOld_[pin];
-
-        if (msDif_[pin] > timeBetweenHits && lastpin == pin)
+        //get new peak:
+        unsigned short newPeak = 0;
+        while (prevSignal >= thresholdPads[pin])
         {
-          lastpin = -1;
-        }
-        if (msDif_[pin] > timeBetweenHits && lastpin != pin)
-        {
-          int newHit = 0;
-          do
-          {
-            if(newHit<hitavg)
-            {
-              newHit = hitavg;
-            }
-            getAnalogData();
-            hitavg = buf[pin];
-          }
-          while(hitavg<newhit);
           
-          MIDI.sendNoteOn(padNote[pin],hitavg,1);
-          //Serial.println(hitavg);
+          if (prevSignal > newPeak) newPeak = prevSignal;
+
+          prevSignalPos--;
+          if (prevSignalPos < 0) prevSignalPos = HIT_BUFFER_SIZE - 1;
+          prevSignal = signalBuffer[pin][prevSignalPos];
         }
-        lastpin = pin;
-        activePad[pin] = true;
-        msOld_[pin] = msNew_[pin];
+        
+        if (newPeak > 0)
+        {
+          
+          recordPeak(pin, newPeak);
+        }
+
       }
     }
-    else if (activePad[pin] == true)
-    {
-        activePad[pin] = false;
-        MIDI.sendNoteOff(padNote[pin],0,1);
-    }
-    currentSignalIndex[i]++;
-    if(currentSignalIndex[i] == SIGNAL_BUFFER_SIZE) currentSignalIndex[i] = 0;
+
+    signalPos[pin]++;
+    if (signalPos[pin] == HIT_BUFFER_SIZE) signalPos[pin] = 0;
   }
+}
+
+void recordPeak(short pin, short peak)
+{
+  if (peak == 0) lastPeakZeroed[pin] = true;
+  else lastPeakZeroed[pin] = false;
+
+  unsigned long currentTime = millis();
+  lastPeakTime[pin] = currentTime;
+
+  peakBuffer[pin][peakPos[pin]] = peak;
+
+  //get prev peak:
+  short prevPeakPos = peakPos[pin] - 1;
+  if (prevPeakPos < 0) prevPeakPos = PEAK_BUFFER_SIZE - 1;
+  unsigned short prevPeak = peakBuffer[pin][prevPeakPos];
+
+  if(peak>prevPeak && (currentTime-lastHitTime[pin])>timeBetweenHits )
+  {
+    hitReady[pin] = true;
+    if(peak>hitReadyVelocity[pin])
+    {
+      hitReadyVelocity[pin] = peak;
+    }
+  }
+  else if(peak<prevPeak && hitReady[pin])
+  {
+    hitReadyVelocity[pin] = hitReadyVelocity[pin]*.65;
+    if(hitReadyVelocity[pin]>=127) hitReadyVelocity[pin] = 126;
+    /*Serial.print("HIT:");
+    Serial.print(hitReadyVelocity[pin]);
+    Serial.println();*/
+    MIDI.sendNoteOn(padNote[pin],hitReadyVelocity[pin],1);
+    MIDI.sendNoteOff(padNote[pin],0,1);
+    hitReady[pin] = false;
+    hitReadyVelocity[pin] = 0;
+    lastHitTime[pin] = currentTime;
+  }
+
+  peakPos[pin]++;
+  if (peakPos[pin] == PEAK_BUFFER_SIZE) peakPos[pin] = 0;
 }
 
 void getAnalogData()
@@ -138,51 +165,14 @@ void getAnalogData()
     digitalWrite(s1, r1);
     digitalWrite(s2, r2);
 
-    buf[count] = analogRead(ANALOG_PIN)-20;
+    buf[count] = analogRead(ANALOG_PIN);
   }
-}
-
-void readPeaks(int pin)
-{
-  for (int peakPos = 0; peakPos < 8; peakPos++)
-  {
-    getAnalogData();
-    peaks[peakPos] = buf[pin];
-    if (peaks[peakPos] > 0)
-    {
-      //Serial.print(peaks[peakPos]);
-      //Serial.print(" ");
-    }
-  }
-  //Serial.print(" - ");
-  //Serial.println(getMax(peaks,8));
-}
-
-int getMax(int arr[], int n)
-{
-  int ret = 0;
-  for (int i = 0; i < n; i++)
-  {
-    if (ret < arr[i])
-      ret = arr[i];
-  }
-  return ret;
-}
-
-int getVelocity(int pin)
-{
-  readPeaks(pin);
-  return getMax(peaks,8);
 }
 
 /*
-   MIDI.sendNoteOn(padNote[pin],hitavg,1);
-   MIDI.sendNoteOff(padNote[pin],0,1);
-*/
+   у нас есть по 2 массива для каэжого пина, в первый постоянно считываем значения hitavg, а в другой считываем изменения значений,
+   если в первый массив поступило подрят несколько значений отличных от нуля, то выбираем максимальное, и записываем во второй массив
+   далее следущее !ОДНО нулевое значение, также записываем во второй массив
 
-/*
-
-signal empty, hit list for 1 piezo: 0 0 0 0 0 ... hit occured 9 40 56 33 23 18 12 9 0 0 0 ~20ms~ 0 0 another hit occured 9 40 56 33 23 18 12 9 0 0 0
-
-*/
+ * */
 
