@@ -1,0 +1,183 @@
+#include <MIDI.h>
+#define SIGNAL_BUFFER_SIZE 50
+#define PEAK_BUFFER_SIZE 15
+#define TIME_BETWEEN_HITS 50
+#define TIME_BETWEEN_PEAKS 25
+
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+int pinRead;
+
+const int pads = 8;
+
+//multiplexer settings
+int r0 = 0;
+int r1 = 0;
+int r2 = 0;
+int s0 = 2;
+int s1 = 3;
+int s2 = 4;
+int ANALOG_PIN = A0;
+int buf[8];
+int count = 0;
+//mx set end
+
+unsigned short padNote[pads] = {48, 38, 43, 36, 49, 42, 46, 51};
+unsigned short thresholdPads[pads] = {50, 50, 50, 50, 50, 50, 50, 50};
+unsigned short signalBuffer[pads][SIGNAL_BUFFER_SIZE];
+unsigned short peakBuffer[pads][PEAK_BUFFER_SIZE];
+unsigned short hitavg = 0;
+
+short currentSignalPos[pads];
+short currentPeakPos[pads];
+boolean lastPeakZeroed[pads];
+
+unsigned long currentTime = 0;
+unsigned long lastPeakTime[pads];
+unsigned long lastHitTime[pads];
+
+bool noteReady[pads];
+unsigned short noteReadyVelocity[pads];
+
+void setup() {
+  // put your setup code here, to run once:
+  //Serial.begin(9600);
+  MIDI.begin(MIDI_CHANNEL_OMNI);
+  pinMode(s0, OUTPUT);
+  pinMode(s1, OUTPUT);
+  pinMode(s2, OUTPUT);
+  for (int i = 0; i < pads; i++)
+  {
+    lastPeakZeroed[i] = false;
+    currentSignalPos[i] = 0;
+    currentPeakPos[i] = 0;
+    lastPeakTime[i] = 0;
+    lastHitTime[i] = 0;
+    noteReady[i] = false;
+    noteReadyVelocity[i] = 0;
+    memset(signalBuffer[i], 0, sizeof(signalBuffer[i]));
+    memset(peakBuffer[i], 0, sizeof(peakBuffer[i]));
+  }
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  hitavg = 0;
+  getAnalogData();
+  currentTime = millis();
+
+  for (int pin = 0; pin < pads; pin++)
+  {
+    //записываем ВСЕ все сигналы в массив
+    hitavg = buf[pin];
+    signalBuffer[pin][currentSignalPos[pin]] = hitavg;
+
+    //если предыдущий пиковый сигнал не был нулевым,
+    //и если прошло достаточно времени между текушим временем и последним пиковым сигналом,
+    //то записываем ноль в массив пиковыъ сигналов
+    if (!lastPeakZeroed[pin] && (currentTime - lastPeakTime[pin] > TIME_BETWEEN_PEAKS) )
+    {
+      recordNewPeak(pin, 0);
+    }
+    else
+    {
+      //берем преыдущий сигнал из массива signalBuffer
+      short prevSignalPos = currentSignalPos[pin] - 1;
+      if (prevSignalPos < 0) prevSignalPos = SIGNAL_BUFFER_SIZE - 1;
+      unsigned short prevSignal = signalBuffer[pin][prevSignalPos];
+
+      unsigned short newPeak = 0;
+
+      //проходим по всей волне сигнала с пьезо в поисках пикового значения
+      while (prevSignal >= thresholdPads[pin])
+      {
+        if (prevSignal > newPeak) newPeak = prevSignal;
+        prevSignalPos--;
+        if (prevSignalPos < 0) prevSignalPos = SIGNAL_BUFFER_SIZE - 1;
+        prevSignal = signalBuffer[pin][prevSignalPos];
+      }
+
+      if (newPeak > 0)
+      {
+        recordNewPeak(pin, newPeak);
+      }
+    }
+
+    currentSignalPos[pin]++;
+    if (currentSignalPos[pin] == SIGNAL_BUFFER_SIZE) currentSignalPos[pin] = 0;
+  }
+
+
+
+}
+
+void recordNewPeak(unsigned short pin, unsigned short newPeak)
+{
+  lastPeakZeroed[pin] = (newPeak == 0);
+
+  //запоминаем время последнего пикового значения чтобы отследить сколько времени прошло и можно ли считывать следущий пик
+  unsigned long currentTime = millis();
+  lastPeakTime[pin] = currentTime;
+
+  //добавляем каждое новое пиковое значение в массив peakBuffer
+  peakBuffer[pin][currentPeakPos[pin]] = newPeak;
+
+  //берем предыдущее пиковое значение
+  short prevPeakPos = currentPeakPos[pin] - 1;
+  if (prevPeakPos < 0) prevPeakPos = PEAK_BUFFER_SIZE - 1;
+  unsigned short prevPeak = peakBuffer[pin][prevPeakPos];
+
+  //1 of 3 cases can happen:
+  // 1) note ready - if new peak >= previous peak
+  // 2) note fire - if new peak < previous peak and previous peak was a note ready
+  // 3) no note - if new peak < previous peak and previous peak was NOT note ready
+  //если прошло достаточно времени с последнего УДАРА и новыйй сигнал больше предыдущего, то но нота в состоянии готовности
+  if (newPeak > prevPeak && (currentTime - lastHitTime[pin] > TIME_BETWEEN_HITS))
+  {
+    noteReady[pin] = true;
+    if (newPeak > noteReadyVelocity[pin])
+      noteReadyVelocity[pin] = newPeak;
+  }
+  else if (newPeak < prevPeak && noteReady[pin])
+  {
+    /*
+    Serial.print(pin);
+    Serial.print(" ");
+    Serial.println(noteReadyVelocity[pin]);*/
+
+    if(noteReadyVelocity[pin]>125) noteReadyVelocity[pin] = 125;
+    MIDI.sendNoteOn(padNote[pin],noteReadyVelocity[pin],1);
+    MIDI.sendNoteOff(padNote[pin],0,1);
+    
+    noteReady[pin] = false;
+    noteReadyVelocity[pin] = 0;
+    lastHitTime[pin] = currentTime;
+  }
+
+  currentPeakPos[pin]++;
+  if (currentPeakPos[pin] == PEAK_BUFFER_SIZE) currentPeakPos[pin] = 0;
+}
+
+void getAnalogData()
+{
+  for (count = 0; count < 8; count++)
+  {
+    r0 = count & 0x01;
+    r1 = (count >> 1) & 0x01;
+    r2 = (count >> 2) & 0x01;
+
+    digitalWrite(s0, r0);
+    digitalWrite(s1, r1);
+    digitalWrite(s2, r2);
+
+    buf[count] = analogRead(ANALOG_PIN);
+  }
+}
+
+/*
+   у нас есть по 2 массива для каэжого пина, в первый постоянно считываем значения hitavg, а в другой считываем изменения значений,
+   если в первый массив поступило подрят несколько значений отличных от нуля, то выбираем максимальное, и записываем во второй массив
+   далее следущее !ОДНО нулевое значение, также записываем во второй массив
+
+ * */
+
